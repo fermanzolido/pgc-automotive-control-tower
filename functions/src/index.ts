@@ -395,9 +395,14 @@ export const updateTransferStatus = functions.https.onCall(async (data, context)
                 updatedAt: admin.firestore.FieldValue.serverTimestamp(),
                 approvedByUserId: uid,
             });
+            const arrivalDate = new Date();
+            arrivalDate.setDate(arrivalDate.getDate() + 7); // Set arrival 7 days from now
+
             transaction.update(vehicleRef, {
                 status: "Transferring",
                 dealershipId: transferData.toDealershipId,
+                estimatedArrivalDate: arrivalDate,
+                currentLocation: "En centro de distribución de origen",
                 history: admin.firestore.FieldValue.arrayUnion({
                     status: "Transferring",
                     date: admin.firestore.FieldValue.serverTimestamp(),

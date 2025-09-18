@@ -22,6 +22,9 @@ export interface Vehicle {
   status: VehicleStatus;
   dealershipId: string | null; // Changed to string
   history: VehicleHistory[];
+  // New fields for detailed logistic tracking
+  estimatedArrivalDate?: Date;
+  currentLocation?: string;
 }
 
 // Stored in Firestore

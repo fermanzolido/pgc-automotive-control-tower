@@ -25,6 +25,7 @@ const historyStatusConfig: Record<VehicleStatus, { icon: React.ReactNode; text: 
     'Arrived': { icon: <CheckCircleIcon className="w-5 h-5" />, text: 'Recibido', color: 'text-purple-400' },
     'In-Stock': { icon: <WarehouseIcon className="w-5 h-5" />, text: 'En Stock', color: 'text-green-400' },
     'Sold': { icon: <CheckCircleIcon className="w-5 h-5" />, text: 'Vendido', color: 'text-red-400' },
+    'Transferring': { icon: <TruckIcon className="w-5 h-5" />, text: 'En Transferencia', color: 'text-cyan-400' },
 };
 
 const DealershipDetailModal: React.FC<DealershipDetailModalProps> = ({ dealership, sales, inventory, onClose, currentUser, onInitiateTransfer }) => {
@@ -157,14 +158,20 @@ const DealershipDetailModal: React.FC<DealershipDetailModalProps> = ({ dealershi
                                             <ul className="space-y-2">
                                                 {v.history.map((entry, index) => (
                                                     <li key={index} className="flex items-center space-x-3 text-xs">
-                                                        <span className={historyStatusConfig[entry.status].color}>
-                                                            {historyStatusConfig[entry.status].icon}
+                                                        <span className={historyStatusConfig[entry.status]?.color || 'text-gray-400'}>
+                                                            {historyStatusConfig[entry.status]?.icon || <CarIcon />}
                                                         </span>
-                                                        <span className={`font-semibold ${historyStatusConfig[entry.status].color} w-24`}>{historyStatusConfig[entry.status].text}</span>
+                                                        <span className={`font-semibold ${historyStatusConfig[entry.status]?.color || 'text-gray-400'} w-24`}>{historyStatusConfig[entry.status]?.text || entry.status}</span>
                                                         <span className="text-gray-500">{entry.date.toLocaleString('es-AR')}</span>
                                                     </li>
                                                 ))}
                                             </ul>
+                                            {(v.status === 'In-Transit' || v.status === 'Transferring') && (
+                                                <div className="mt-3 pt-3 border-t border-gray-700/50 text-xs">
+                                                    <p className="text-gray-300"><span className="font-semibold">Ubicación Actual:</span> {v.currentLocation || 'No disponible'}</p>
+                                                    <p className="text-gray-300"><span className="font-semibold">Llegada Estimada:</span> {v.estimatedArrivalDate ? new Date(v.estimatedArrivalDate).toLocaleDateString('es-AR') : 'No disponible'}</p>
+                                                </div>
+                                            )}
                                         </td>
                                     </tr>
                                 )}

@@ -6,7 +6,7 @@ export interface Dealership {
   coords: { x: number; y: number };
 }
 
-export type VehicleStatus = 'At-Factory' | 'In-Transit' | 'Arrived' | 'In-Stock' | 'Sold';
+export type VehicleStatus = 'At-Factory' | 'In-Transit' | 'Arrived' | 'In-Stock' | 'Sold' | 'Transferring';
 
 export interface VehicleHistory {
   status: VehicleStatus;
@@ -22,6 +22,8 @@ export interface Vehicle {
   status: VehicleStatus;
   dealershipId: string | null;
   history: VehicleHistory[];
+  estimatedArrivalDate?: Date;
+  currentLocation?: string;
 }
 
 export interface Sale {

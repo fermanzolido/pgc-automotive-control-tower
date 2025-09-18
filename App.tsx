@@ -261,7 +261,10 @@ const App: React.FC = () => {
 
   const handleBulkAssignVehicles = async (vins: string[], dealershipId: string) => {
       const batch = writeBatch(db);
+      const arrivalDate = new Date();
+      arrivalDate.setDate(arrivalDate.getDate() + 14); // Set arrival 14 days from now for factory shipments
       const newHistoryEntry = { status: 'In-Transit' as const, date: new Date() };
+
       vins.forEach(vin => {
         const vehicleRef = doc(db, 'vehicles', vin);
         const currentVehicle = allVehicles.find(v => v.vin === vin);
@@ -269,7 +272,9 @@ const App: React.FC = () => {
             batch.update(vehicleRef, { 
                 dealershipId,
                 status: 'In-Transit',
-                history: [...currentVehicle.history, newHistoryEntry]
+                history: [...currentVehicle.history, newHistoryEntry],
+                estimatedArrivalDate: arrivalDate,
+                currentLocation: 'En tránsito desde fábrica',
             });
         }
       });
