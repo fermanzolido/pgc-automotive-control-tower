@@ -6,7 +6,7 @@ export interface Dealership {
   coords: { x: number; y: number };
 }
 
-export type VehicleStatus = 'At-Factory' | 'In-Transit' | 'Arrived' | 'In-Stock' | 'Sold';
+export type VehicleStatus = 'At-Factory' | 'In-Transit' | 'Arrived' | 'In-Stock' | 'Sold' | 'Transferring';
 
 export interface VehicleHistory {
   status: VehicleStatus;
@@ -65,6 +65,24 @@ export interface User {
   role: Role;
   dealershipId?: string; // Changed to string
   commissionRate?: number; // Tasa de comisión para vendedores (ej: 0.1 para 10%)
+}
+
+export type TransferRequestStatus = 'pending' | 'approved' | 'rejected' | 'completed';
+
+export interface TransferRequest {
+  id: string;
+  vehicleId: string;
+  fromDealershipId: string;
+  toDealershipId: string;
+  requestingUserId: string;
+  status: TransferRequestStatus;
+  createdAt: Date;
+  updatedAt: Date;
+  // Optional fields for tracking the transfer process
+  approvedByUserId?: string;
+  rejectionReason?: string;
+  shippedAt?: Date;
+  receivedAt?: Date;
 }
 
 export interface ChatMessage {

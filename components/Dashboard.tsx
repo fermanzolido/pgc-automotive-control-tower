@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
-import type { EnrichedSale, Dealership, RegionalSale, Vehicle, User, Goal } from '../types';
+import type { EnrichedSale, Dealership, RegionalSale, Vehicle, User, Goal, TransferRequest } from '../types';
+import TransferManagement from './TransferManagement';
 import KpiCard from './KpiCard';
 import RecentSales from './RecentSales';
 import RegionalSalesChart from './RegionalSalesChart';
@@ -24,13 +25,34 @@ interface DashboardProps {
     };
     topSalespeople: any[];
     topDealerships: any[];
+    transferRequests: TransferRequest[];
     onInitiateSale: (vehicle: Vehicle) => void;
     onAcceptDelivery: (vin: string) => void;
+    onInitiateTransfer: (vehicle: Vehicle) => void;
+    onApproveTransfer: (transferId: string) => void;
+    onRejectTransfer: (transferId: string) => void;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ currentUser, sales, vehicles, dealerships, users, regionalSales, financialKpis, topSalespeople, topDealerships, onInitiateSale, onAcceptDelivery }) => {
+const Dashboard: React.FC<DashboardProps> = ({
+    currentUser,
+    sales,
+    vehicles,
+    dealerships,
+    users,
+    regionalSales,
+    financialKpis,
+    topSalespeople,
+    topDealerships,
+    transferRequests,
+    onInitiateSale,
+    onAcceptDelivery,
+    onInitiateTransfer,
+    onApproveTransfer,
+    onRejectTransfer,
+}) => {
     const [activeDealership, setActiveDealership] = useState<Dealership | null>(null);
     const [selectedDealership, setSelectedDealership] = useState<Dealership | null>(null);
+    const [viewMode, setViewMode] = useState<'dashboard' | 'transfers'>('dashboard');
 
     const isFactoryUser = currentUser.role === 'Factory';
     const isDealershipUser = currentUser.role === 'DealershipAdmin' || currentUser.role === 'Salesperson';
@@ -76,18 +98,49 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, sales, vehicles, dea
     
     return (
         <>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                <KpiCard title={isFactoryUser ? "Ingresos Totales (Red)" : "Ingresos Totales (Local)"} value={`$${financialKpis.totalRevenue.toLocaleString('es-AR')}`} icon={<DollarSignIcon />} trend={`$${kpis.totalSales.toLocaleString('es-AR')} en ventas`}/>
-                <KpiCard title={isFactoryUser ? "Ganancia Neta (Red)" : "Ganancia Neta (Local)"} value={`$${financialKpis.totalProfit.toLocaleString('es-AR')}`} icon={<ZapIcon />} trend={`$${financialKpis.totalCommissions.toLocaleString('es-AR')} en comisiones`} />
-                <KpiCard title="Margen de Ganancia" value={`${financialKpis.averageMargin.toFixed(2)}%`} icon={<PercentIcon />} trend="Promedio de la red" />
-                <KpiCard title="Vehículos Vendidos" value={kpis.totalVehicles.toString()} icon={<CarIcon />} trend="Unidades facturadas"/>
-            </div>
+            {currentUser.role === 'DealershipAdmin' && (
+                <div className="mb-6 flex space-x-1 rounded-lg bg-gray-700 p-1">
+                    <button
+                        onClick={() => setViewMode('dashboard')}
+                        className={`w-full rounded-md py-2 text-sm font-medium transition-colors ${
+                            viewMode === 'dashboard' ? 'bg-cyan-600 text-white shadow' : 'text-gray-300 hover:bg-gray-600'
+                        }`}
+                    >
+                        Dashboard Principal
+                    </button>
+                    <button
+                        onClick={() => setViewMode('transfers')}
+                        className={`w-full rounded-md py-2 text-sm font-medium transition-colors ${
+                            viewMode === 'transfers' ? 'bg-cyan-600 text-white shadow' : 'text-gray-300 hover:bg-gray-600'
+                        }`}
+                    >
+                        Gestionar Transferencias
+                    </button>
+                </div>
+            )}
 
-            <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {isFactoryUser ? (
-                    <>
-                        <div className="lg:col-span-2 bg-gray-800 p-6 rounded-lg shadow-lg flex flex-col min-h-[300px] max-h-[500px]">
-                            <h2 className="text-xl font-bold mb-1 text-cyan-400">Mapa de Operaciones</h2>
+            {viewMode === 'transfers' && currentUser.role === 'DealershipAdmin' ? (
+                <TransferManagement
+                    currentUser={currentUser}
+                    transferRequests={transferRequests}
+                    allDealerships={dealerships}
+                    onApprove={onApproveTransfer}
+                    onReject={onRejectTransfer}
+                />
+            ) : (
+                <>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                        <KpiCard title={isFactoryUser ? "Ingresos Totales (Red)" : "Ingresos Totales (Local)"} value={`$${financialKpis.totalRevenue.toLocaleString('es-AR')}`} icon={<DollarSignIcon />} trend={`$${kpis.totalSales.toLocaleString('es-AR')} en ventas`}/>
+                        <KpiCard title={isFactoryUser ? "Ganancia Neta (Red)" : "Ganancia Neta (Local)"} value={`$${financialKpis.totalProfit.toLocaleString('es-AR')}`} icon={<ZapIcon />} trend={`$${financialKpis.totalCommissions.toLocaleString('es-AR')} en comisiones`} />
+                        <KpiCard title="Margen de Ganancia" value={`${financialKpis.averageMargin.toFixed(2)}%`} icon={<PercentIcon />} trend="Promedio de la red" />
+                        <KpiCard title="Vehículos Vendidos" value={kpis.totalVehicles.toString()} icon={<CarIcon />} trend="Unidades facturadas"/>
+                    </div>
+
+                    <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        {isFactoryUser ? (
+                            <>
+                                <div className="lg:col-span-2 bg-gray-800 p-6 rounded-lg shadow-lg flex flex-col min-h-[300px] max-h-[500px]">
+                                    <h2 className="text-xl font-bold mb-1 text-cyan-400">Mapa de Operaciones</h2>
                             <p className="text-sm text-gray-400 mb-4">Haz clic en un concesionario para ver detalles.</p>
                             <div className="flex-grow relative">
                                 <MapChart 
@@ -215,10 +268,14 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, sales, vehicles, dea
                     sales={sales}
                     inventory={vehicles}
                     onClose={() => setSelectedDealership(null)}
+                    currentUser={currentUser}
+                    onInitiateTransfer={onInitiateTransfer}
                 />
             )}
             
             {isFactoryUser && <AI_Assistant sales={sales} vehicles={vehicles} dealerships={dealerships} salespeople={users.filter(u => u.role === 'Salesperson')} />}
+                </>
+            )}
         </>
     );
 };

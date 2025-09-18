@@ -6,7 +6,7 @@ import SaleModal from './components/SaleModal';
 import ReportModal from './components/ReportModal';
 import Login from './components/Login';
 import SalespersonManagementModal from './components/SalespersonManagementModal';
-import type { User, Sale, Vehicle, Dealership, EnrichedSale, ReportOptions, Goal } from './types';
+import type { User, Sale, Vehicle, Dealership, EnrichedSale, ReportOptions, Goal, TransferRequest } from './types';
 import { getSeedData } from './services/mockData';
 import { auth, db } from './services/firebase';
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut, createUserWithEmailAndPassword } from 'firebase/auth';
@@ -54,6 +54,7 @@ const App: React.FC = () => {
   const [allVehicles, setAllVehicles] = useState<Vehicle[]>([]);
   const [allDealerships, setAllDealerships] = useState<Dealership[]>([]);
   const [allGoals, setAllGoals] = useState<Goal[]>([]);
+  const [allTransferRequests, setAllTransferRequests] = useState<TransferRequest[]>([]);
 
   // --- DATABASE SEEDING ---
   useEffect(() => {
@@ -141,12 +142,24 @@ const App: React.FC = () => {
       setAllGoals(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Goal)));
     });
 
+    const unsubTransfers = onSnapshot(collection(db, 'transfer_requests'), (snapshot) => {
+        const transfers = snapshot.docs.map(doc => {
+            const data = doc.data();
+            return {
+                ...convertTimestampsInObject(data),
+                id: doc.id,
+            } as TransferRequest;
+        });
+        setAllTransferRequests(transfers);
+    });
+
     return () => {
       unsubMetrics();
       unsubUsers();
       unsubDealerships();
       unsubVehicles();
       unsubGoals();
+      unsubTransfers();
     };
   }, [currentUser]);
 
@@ -311,6 +324,60 @@ const App: React.FC = () => {
       setVehicleToSell(null);
   };
     
+  const handleInitiateTransfer = async (vehicle: Vehicle) => {
+    if (!currentUser || !vehicle.dealershipId) {
+        alert("Error: No se pudo procesar la solicitud. Intente de nuevo.");
+        return;
+    }
+
+    if (window.confirm(`¿Está seguro que desea solicitar la transferencia del ${vehicle.model} (VIN: ${vehicle.vin})?`)) {
+        try {
+            const newTransferRequest: Omit<TransferRequest, 'id'> = {
+                vehicleId: vehicle.vin,
+                fromDealershipId: vehicle.dealershipId,
+                toDealershipId: currentUser.dealershipId!,
+                requestingUserId: currentUser.id,
+                status: 'pending',
+                createdAt: new Date(),
+                updatedAt: new Date(),
+            };
+            await addDoc(collection(db, "transfer_requests"), newTransferRequest);
+            alert("Solicitud de transferencia enviada exitosamente.");
+        } catch (error) {
+            console.error("Error creating transfer request:", error);
+            alert("Ocurrió un error al enviar la solicitud.");
+        }
+    }
+  };
+
+  const handleApproveTransfer = async (transferId: string) => {
+      if (!window.confirm("¿Está seguro que desea APROBAR esta transferencia?")) return;
+      try {
+          const functions = getFunctions();
+          const updateTransfer = httpsCallable(functions, 'updateTransferStatus');
+          await updateTransfer({ transferId, status: 'approved' });
+          alert('Transferencia aprobada exitosamente. El vehículo ahora está en tránsito.');
+      } catch (error: any) {
+          console.error("Error approving transfer:", error);
+          alert(`Error al aprobar la transferencia: ${error.message}`);
+      }
+  };
+
+  const handleRejectTransfer = async (transferId: string) => {
+      const reason = prompt("Por favor, ingrese un breve motivo para el rechazo:");
+      if (reason) {
+          try {
+              const functions = getFunctions();
+              const updateTransfer = httpsCallable(functions, 'updateTransferStatus');
+              await updateTransfer({ transferId, status: 'rejected', rejectionReason: reason });
+              alert('Transferencia rechazada.');
+          } catch (error: any) {
+              console.error("Error rejecting transfer:", error);
+              alert(`Error al rechazar la transferencia: ${error.message}`);
+          }
+      }
+  };
+
   // --- REPORT HANDLER ---
   const handleGenerateReport = async (options: ReportOptions) => {
       setIsReportGenerating(true);
@@ -382,8 +449,12 @@ const App: React.FC = () => {
           financialKpis={dashboardData.financialKpis}
           topSalespeople={filteredTopSalespeople}
           topDealerships={dashboardData.topDealerships}
+          transferRequests={allTransferRequests}
           onInitiateSale={setVehicleToSell}
           onAcceptDelivery={handleAcceptVehicleDelivery}
+          onInitiateTransfer={handleInitiateTransfer}
+          onApproveTransfer={handleApproveTransfer}
+          onRejectTransfer={handleRejectTransfer}
         />
       </main>
       

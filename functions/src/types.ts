@@ -72,3 +72,20 @@ export interface Goal {
   target: number;
   month: string; // YYYY-MM format
 }
+
+export type TransferRequestStatus = 'pending' | 'approved' | 'rejected' | 'completed';
+
+export interface TransferRequest {
+  id: string;
+  vehicleId: string;
+  fromDealershipId: string;
+  toDealershipId: string;
+  requestingUserId: string;
+  status: TransferRequestStatus;
+  createdAt: Date;
+  updatedAt: Date;
+  approvedByUserId?: string;
+  rejectionReason?: string;
+  shippedAt?: Date;
+  receivedAt?: Date;
+}

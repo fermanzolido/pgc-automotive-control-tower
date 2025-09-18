@@ -8,6 +8,7 @@ import {
   Goal,
   EnrichedSale,
   RegionalSale,
+  TransferRequest,
 } from "./types";
 
 admin.initializeApp();
@@ -345,4 +346,71 @@ export const generateReport = functions.https.onCall(async (data, context) => {
   });
 
   return {csvString};
+});
+
+export const updateTransferStatus = functions.https.onCall(async (data, context) => {
+    if (!context.auth) {
+        throw new functions.https.HttpsError(
+            "unauthenticated", "The function must be called while authenticated.",
+        );
+    }
+
+    const { transferId, status, rejectionReason } = data;
+    if (!transferId || !status || (status === "rejected" && !rejectionReason)) {
+        throw new functions.https.HttpsError(
+            "invalid-argument", "Missing required parameters.",
+        );
+    }
+
+    const uid = context.auth.uid;
+    const transferRef = db.collection("transfer_requests").doc(transferId);
+
+    return db.runTransaction(async (transaction) => {
+        const transferDoc = await transaction.get(transferRef);
+        if (!transferDoc.exists) {
+            throw new functions.https.HttpsError("not-found", "Transfer request not found.");
+        }
+
+        const transferData = transferDoc.data() as TransferRequest;
+        const userDoc = await db.collection("users").doc(uid).get();
+        const currentUser = userDoc.data() as User;
+
+        if (currentUser.role !== "DealershipAdmin" || currentUser.dealershipId !== transferData.fromDealershipId) {
+            throw new functions.https.HttpsError(
+                "permission-denied", "You are not authorized to perform this action.",
+            );
+        }
+
+        if (transferData.status !== "pending") {
+            throw new functions.https.HttpsError(
+                "failed-precondition", "This request has already been processed.",
+            );
+        }
+
+        const vehicleRef = db.collection("vehicles").doc(transferData.vehicleId);
+
+        if (status === "approved") {
+            transaction.update(transferRef, {
+                status: "approved",
+                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                approvedByUserId: uid,
+            });
+            transaction.update(vehicleRef, {
+                status: "Transferring",
+                dealershipId: transferData.toDealershipId,
+                history: admin.firestore.FieldValue.arrayUnion({
+                    status: "Transferring",
+                    date: admin.firestore.FieldValue.serverTimestamp(),
+                }),
+            });
+        } else if (status === "rejected") {
+            transaction.update(transferRef, {
+                status: "rejected",
+                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                rejectionReason: rejectionReason,
+            });
+        }
+
+        return { success: true, newStatus: status };
+    });
 });
