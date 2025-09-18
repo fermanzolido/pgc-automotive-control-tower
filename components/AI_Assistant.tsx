@@ -3,19 +3,18 @@ import { GoogleGenAI } from '@google/genai';
 import { marked } from 'marked';
 // FIX: The type 'Salesperson' does not exist. It has been replaced with 'User' as per the project's type definitions.
 // FIX: Changed 'Sale' to 'EnrichedSale' to match the data passed from the parent component and resolve property access errors.
-import type { ChatMessage, EnrichedSale, Vehicle, Dealership, User } from '../types';
-import { SparklesIcon, PaperAirplaneIcon, XIcon, ChevronDownIcon } from './icons/DashboardIcons';
+import type { ChatMessage, EnrichedSale, Vehicle, Dealership, User, DemandForecast } from '../types';
+import { SparklesIcon, PaperAirplaneIcon, XIcon, ChevronDownIcon, TrendingUpIcon } from './icons/DashboardIcons';
 
 interface AI_AssistantProps {
-    // FIX: Updated the prop type from Sale[] to EnrichedSale[] to align with the data passed from the Dashboard component. This fixes multiple type errors.
     sales: EnrichedSale[];
     vehicles: Vehicle[];
     dealerships: Dealership[];
-    // FIX: The 'salespeople' prop should be an array of 'User' type, not the non-existent 'Salesperson' type.
     salespeople: User[];
+    demandForecasts: DemandForecast[];
 }
 
-const AI_Assistant: React.FC<AI_AssistantProps> = ({ sales, vehicles, dealerships, salespeople }) => {
+const AI_Assistant: React.FC<AI_AssistantProps> = ({ sales, vehicles, dealerships, salespeople, demandForecasts }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [input, setInput] = useState('');
@@ -131,6 +130,33 @@ const AI_Assistant: React.FC<AI_AssistantProps> = ({ sales, vehicles, dealership
 
             <div className="flex-grow p-4 overflow-y-auto">
                 <div className="space-y-4">
+                    {messages.length === 0 && (
+                        <div className="p-4 bg-gray-700/50 rounded-lg">
+                            <h4 className="font-bold text-cyan-400 mb-2">Previsión de Demanda (Próximo Mes)</h4>
+                            {demandForecasts.length > 0 ? (
+                                <table className="w-full text-sm text-left">
+                                    <thead className="text-xs text-gray-400 uppercase">
+                                        <tr>
+                                            <th className="py-2">Modelo</th>
+                                            <th className="py-2">Provincia</th>
+                                            <th className="py-2 text-right">Ventas Previstas</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-700">
+                                        {demandForecasts.sort((a,b) => b.forecastedSales - a.forecastedSales).map(f => (
+                                            <tr key={f.id}>
+                                                <td className="py-2 font-medium">{f.model}</td>
+                                                <td className="py-2 text-gray-400">{f.province}</td>
+                                                <td className="py-2 text-right font-bold text-cyan-400">{f.forecastedSales}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            ) : (
+                                <p className="text-gray-500">No hay datos de previsión disponibles. El cálculo se ejecuta semanalmente.</p>
+                            )}
+                        </div>
+                    )}
                     {messages.map(msg => (
                         <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                             <div className={`max-w-xs md:max-w-sm lg:max-w-md px-4 py-2 rounded-2xl ${msg.role === 'user' ? 'bg-cyan-600 text-white' : 'bg-gray-700 text-gray-200'}`}>

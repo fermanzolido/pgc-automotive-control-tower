@@ -91,3 +91,11 @@ export interface TransferRequest {
   shippedAt?: Date;
   receivedAt?: Date;
 }
+
+export interface DemandForecast {
+    id: string; // e.g., 'corolla-buenos_aires'
+    model: string;
+    province: string;
+    forecastedSales: number;
+    lastCalculated: Date;
+}

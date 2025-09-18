@@ -6,7 +6,7 @@ import SaleModal from './components/SaleModal';
 import ReportModal from './components/ReportModal';
 import Login from './components/Login';
 import SalespersonManagementModal from './components/SalespersonManagementModal';
-import type { User, Sale, Vehicle, Dealership, EnrichedSale, ReportOptions, Goal, TransferRequest } from './types';
+import type { User, Sale, Vehicle, Dealership, EnrichedSale, ReportOptions, Goal, TransferRequest, DemandForecast } from './types';
 import { getSeedData } from './services/mockData';
 import { auth, db } from './services/firebase';
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut, createUserWithEmailAndPassword } from 'firebase/auth';
@@ -55,6 +55,7 @@ const App: React.FC = () => {
   const [allDealerships, setAllDealerships] = useState<Dealership[]>([]);
   const [allGoals, setAllGoals] = useState<Goal[]>([]);
   const [allTransferRequests, setAllTransferRequests] = useState<TransferRequest[]>([]);
+  const [demandForecasts, setDemandForecasts] = useState<DemandForecast[]>([]);
 
   // --- DATABASE SEEDING ---
   useEffect(() => {
@@ -153,6 +154,17 @@ const App: React.FC = () => {
         setAllTransferRequests(transfers);
     });
 
+    const unsubForecasts = onSnapshot(collection(db, 'demand_forecasts'), (snapshot) => {
+        const forecasts = snapshot.docs.map(doc => {
+            const data = doc.data();
+            return {
+                ...convertTimestampsInObject(data),
+                id: doc.id,
+            } as DemandForecast;
+        });
+        setDemandForecasts(forecasts);
+    });
+
     return () => {
       unsubMetrics();
       unsubUsers();
@@ -160,6 +172,7 @@ const App: React.FC = () => {
       unsubVehicles();
       unsubGoals();
       unsubTransfers();
+      unsubForecasts();
     };
   }, [currentUser]);
 
@@ -460,6 +473,7 @@ const App: React.FC = () => {
           onInitiateTransfer={handleInitiateTransfer}
           onApproveTransfer={handleApproveTransfer}
           onRejectTransfer={handleRejectTransfer}
+          demandForecasts={demandForecasts}
         />
       </main>
       

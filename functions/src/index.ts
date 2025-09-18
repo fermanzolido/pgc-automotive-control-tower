@@ -419,3 +419,64 @@ export const updateTransferStatus = functions.https.onCall(async (data, context)
         return { success: true, newStatus: status };
     });
 });
+
+export const calculateDemandForecast = functions.pubsub.schedule("every sunday 00:00").onRun(async (context) => {
+    console.log("Running weekly demand forecast calculation...");
+
+    const threeMonthsAgo = new Date();
+    threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+
+    const salesSnapshot = await db.collection("sales")
+        .where("timestamp", ">=", threeMonthsAgo)
+        .get();
+
+    const allSales = salesSnapshot.docs.map(doc => convertTimestamps({id: doc.id, ...doc.data()}) as Sale);
+
+    if (allSales.length === 0) {
+        console.log("No sales data in the last 3 months. Skipping forecast.");
+        return null;
+    }
+
+    const enrichedSales: EnrichedSale[] = [];
+    const vehiclesSnapshot = await db.collection("vehicles").get();
+    const dealershipsSnapshot = await db.collection("dealerships").get();
+    const allVehicles = vehiclesSnapshot.docs.map(doc => ({vin: doc.id, ...doc.data()}) as Vehicle);
+    const allDealerships = dealershipsSnapshot.docs.map(doc => ({id: doc.id, ...doc.data()}) as Dealership);
+
+    allSales.forEach(sale => {
+        const vehicle = allVehicles.find(v => v.vin === sale.vehicleId);
+        const dealership = allDealerships.find(d => d.id === sale.dealershipId);
+        if (vehicle && dealership) {
+            enrichedSales.push({ ...sale, vehicle, dealership, salesperson: {} as User });
+        }
+    });
+
+    const salesByModelProvince: { [key: string]: number } = enrichedSales.reduce((acc, sale) => {
+        const key = `${sale.vehicle.model}|${sale.dealership.province}`;
+        acc[key] = (acc[key] || 0) + 1;
+        return acc;
+    }, {} as Record<string, number>);
+
+    const batch = db.batch();
+
+    for (const key in salesByModelProvince) {
+        const [model, province] = key.split("|");
+        const totalSales = salesByModelProvince[key];
+        const forecastedSales = Math.ceil(totalSales / 3); // Average monthly sales
+
+        const forecastId = `${model.toLowerCase().replace(" ", "_")}-${province.toLowerCase().replace(" ", "_")}`;
+        const forecastRef = db.collection("demand_forecasts").doc(forecastId);
+
+        batch.set(forecastRef, {
+            id: forecastId,
+            model,
+            province,
+            forecastedSales,
+            lastCalculated: admin.firestore.FieldValue.serverTimestamp(),
+        });
+    }
+
+    await batch.commit();
+    console.log(`Demand forecast updated for ${Object.keys(salesByModelProvince).length} model/province combinations.`);
+    return null;
+});

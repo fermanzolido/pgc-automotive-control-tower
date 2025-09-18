@@ -109,3 +109,10 @@ export interface Goal {
   month: string; // YYYY-MM format
 }
 
+export interface DemandForecast {
+    id: string; // e.g., 'corolla-buenos_aires'
+    model: string;
+    province: string;
+    forecastedSales: number;
+    lastCalculated: Date;
+}

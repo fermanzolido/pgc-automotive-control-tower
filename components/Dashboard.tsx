@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import type { EnrichedSale, Dealership, RegionalSale, Vehicle, User, Goal, TransferRequest } from '../types';
+import type { EnrichedSale, Dealership, RegionalSale, Vehicle, User, Goal, TransferRequest, DemandForecast } from '../types';
 import TransferManagement from './TransferManagement';
 import KpiCard from './KpiCard';
 import RecentSales from './RecentSales';
@@ -31,6 +31,7 @@ interface DashboardProps {
     onInitiateTransfer: (vehicle: Vehicle) => void;
     onApproveTransfer: (transferId: string) => void;
     onRejectTransfer: (transferId: string) => void;
+    demandForecasts: DemandForecast[];
 }
 
 const Dashboard: React.FC<DashboardProps> = ({
@@ -44,6 +45,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     topSalespeople,
     topDealerships,
     transferRequests,
+    demandForecasts,
     onInitiateSale,
     onAcceptDelivery,
     onInitiateTransfer,
@@ -273,7 +275,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                 />
             )}
             
-            {isFactoryUser && <AI_Assistant sales={sales} vehicles={vehicles} dealerships={dealerships} salespeople={users.filter(u => u.role === 'Salesperson')} />}
+            {isFactoryUser && <AI_Assistant sales={sales} vehicles={vehicles} dealerships={dealerships} salespeople={users.filter(u => u.role === 'Salesperson')} demandForecasts={demandForecasts} />}
                 </>
             )}
         </>
