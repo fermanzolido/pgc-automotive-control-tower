@@ -1,12 +1,14 @@
 import React, { useMemo, useState } from 'react';
-import type { Dealership, EnrichedSale, Vehicle, VehicleStatus } from '../types';
-import { XIcon, CarIcon, WarehouseIcon, TruckIcon, CheckCircleIcon, UserCircleIcon, MailIcon, PhoneIcon, LocationMarkerIcon } from './icons/DashboardIcons';
+import type { Dealership, EnrichedSale, Vehicle, VehicleStatus, User } from '../types';
+import { XIcon, CarIcon, WarehouseIcon, TruckIcon, CheckCircleIcon, UserCircleIcon, MailIcon, PhoneIcon, LocationMarkerIcon, ArrowRightIcon } from './icons/DashboardIcons';
 
 interface DealershipDetailModalProps {
   dealership: Dealership;
   sales: EnrichedSale[];
   inventory: Vehicle[];
   onClose: () => void;
+  currentUser: User;
+  onInitiateTransfer: (vehicle: Vehicle) => void;
 }
 
 const statusStyles: Record<VehicleStatus, { text: string; bg: string; }> = {
@@ -25,7 +27,7 @@ const historyStatusConfig: Record<VehicleStatus, { icon: React.ReactNode; text: 
     'Sold': { icon: <CheckCircleIcon className="w-5 h-5" />, text: 'Vendido', color: 'text-red-400' },
 };
 
-const DealershipDetailModal: React.FC<DealershipDetailModalProps> = ({ dealership, sales, inventory, onClose }) => {
+const DealershipDetailModal: React.FC<DealershipDetailModalProps> = ({ dealership, sales, inventory, onClose, currentUser, onInitiateTransfer }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedVin, setExpandedVin] = useState<string | null>(null);
   const [expandedSaleId, setExpandedSaleId] = useState<string | null>(null);
@@ -120,26 +122,37 @@ const DealershipDetailModal: React.FC<DealershipDetailModalProps> = ({ dealershi
                             <th scope="col" className="px-4 py-2">Modelo</th>
                             <th scope="col" className="px-4 py-2">VIN</th>
                             <th scope="col" className="px-4 py-2">Estado</th>
+                            <th scope="col" className="px-4 py-2 text-right">Acción</th>
                         </tr>
                     </thead>
                     <tbody>
                         {filteredInventory.map(v => (
                             <React.Fragment key={v.vin}>
                                 <tr 
-                                    className="border-b border-gray-700 hover:bg-gray-700/50 cursor-pointer"
-                                    onClick={() => setExpandedVin(expandedVin === v.vin ? null : v.vin)}
+                                    className="border-b border-gray-700 hover:bg-gray-700/50"
                                 >
-                                    <td className="px-4 py-2 font-medium">{v.model} <span className="text-gray-400 text-xs">({v.color})</span></td>
-                                    <td className="px-4 py-2 text-gray-400 font-mono text-xs">{v.vin}</td>
-                                    <td className="px-4 py-2">
-                                        <span className={`px-2 py-0.5 text-xs font-semibold rounded-full ${statusStyles[v.status].bg} ${statusStyles[v.status].text}`}>
+                                    <td className="px-4 py-2 font-medium cursor-pointer" onClick={() => setExpandedVin(expandedVin === v.vin ? null : v.vin)}>{v.model} <span className="text-gray-400 text-xs">({v.color})</span></td>
+                                    <td className="px-4 py-2 text-gray-400 font-mono text-xs cursor-pointer" onClick={() => setExpandedVin(expandedVin === v.vin ? null : v.vin)}>{v.vin}</td>
+                                    <td className="px-4 py-2 cursor-pointer" onClick={() => setExpandedVin(expandedVin === v.vin ? null : v.vin)}>
+                                        <span className={`px-2 py-0.5 text-xs font-semibold rounded-full ${statusStyles[v.status]?.bg || 'bg-gray-500'} ${statusStyles[v.status]?.text || 'text-gray-100'}`}>
                                             {getStatusText(v.status)}
                                         </span>
+                                    </td>
+                                    <td className="px-4 py-2 text-right">
+                                        {currentUser.role === 'DealershipAdmin' && currentUser.dealershipId !== dealership.id && v.status === 'In-Stock' && (
+                                            <button
+                                                onClick={() => onInitiateTransfer(v)}
+                                                className="bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-1 px-2 rounded-lg text-xs transition-colors flex items-center"
+                                            >
+                                                <ArrowRightIcon className="w-4 h-4 mr-1"/>
+                                                Solicitar
+                                            </button>
+                                        )}
                                     </td>
                                 </tr>
                                 {expandedVin === v.vin && (
                                     <tr className="bg-gray-900">
-                                        <td colSpan={3} className="p-3">
+                                        <td colSpan={4} className="p-3">
                                             <h4 className="text-xs font-bold text-cyan-400 mb-2">Historial del Vehículo</h4>
                                             <ul className="space-y-2">
                                                 {v.history.map((entry, index) => (

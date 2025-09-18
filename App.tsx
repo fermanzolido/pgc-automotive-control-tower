@@ -6,36 +6,61 @@ import SaleModal from './components/SaleModal';
 import ReportModal from './components/ReportModal';
 import Login from './components/Login';
 import SalespersonManagementModal from './components/SalespersonManagementModal';
-import type { User, Sale, Vehicle, Dealership, RegionalSale, EnrichedSale, ReportOptions, Goal } from './types';
+import type { User, Sale, Vehicle, Dealership, EnrichedSale, ReportOptions, Goal, TransferRequest } from './types';
 import { getSeedData } from './services/mockData';
 import { auth, db } from './services/firebase';
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut, createUserWithEmailAndPassword } from 'firebase/auth';
-import { collection, getDocs, doc, getDoc, setDoc, deleteDoc, onSnapshot, writeBatch, addDoc, query, where, Timestamp, updateDoc } from 'firebase/firestore';
+import { collection, getDocs, doc, getDoc, setDoc, deleteDoc, onSnapshot, writeBatch, updateDoc } from 'firebase/firestore';
+import { getFunctions, httpsCallable } from 'firebase/functions';
+
+// Helper to convert Firestore Timestamps from Cloud Function result
+const convertTimestampsInObject = (data: any): any => {
+    if (data === null || typeof data !== 'object') {
+      return data;
+    }
+    // Check if it's a Firestore Timestamp object (from server or client)
+    if (typeof data.toDate === 'function') {
+        return data.toDate();
+    }
+    if (Array.isArray(data)) {
+      return data.map(convertTimestampsInObject);
+    }
+    const res: {[key: string]: any} = {};
+    for (const key in data) {
+      if (Object.prototype.hasOwnProperty.call(data, key)) {
+        res[key] = convertTimestampsInObject(data[key]);
+      }
+    }
+    return res;
+};
+
 
 const App: React.FC = () => {
   // --- STATE MANAGEMENT ---
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
-  
+  const [dashboardLoading, setDashboardLoading] = useState(true);
+  const [dashboardData, setDashboardData] = useState<any>(null);
+  const [isReportGenerating, setIsReportGenerating] = useState(false);
+
   // Modal states
   const [isManagementModalOpen, setIsManagementModalOpen] = useState(false);
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [isSalespersonModalOpen, setIsSalespersonModalOpen] = useState(false);
   const [vehicleToSell, setVehicleToSell] = useState<Vehicle | null>(null);
 
-  // Data State
-  const [allSales, setAllSales] = useState<Sale[]>([]);
+  // Raw data states for modals & other components
+  const [users, setUsers] = useState<User[]>([]);
   const [allVehicles, setAllVehicles] = useState<Vehicle[]>([]);
   const [allDealerships, setAllDealerships] = useState<Dealership[]>([]);
   const [allGoals, setAllGoals] = useState<Goal[]>([]);
+  const [allTransferRequests, setAllTransferRequests] = useState<TransferRequest[]>([]);
 
   // --- DATABASE SEEDING ---
   useEffect(() => {
     const seedDatabase = async () => {
-        const dealershipsCollection = collection(db, 'dealerships');
-        const snapshot = await getDocs(dealershipsCollection);
-        if (snapshot.empty) {
+        const salesSnapshot = await getDocs(collection(db, 'sales'));
+        if (salesSnapshot.empty) {
             console.log("Database is empty. Seeding data...");
             const { dealerships, vehicles } = getSeedData();
             const batch = writeBatch(db);
@@ -57,7 +82,7 @@ const App: React.FC = () => {
     seedDatabase();
   }, []);
 
-  // --- FIREBASE AUTH & DATA LOADING ---
+  // --- FIREBASE AUTH ---
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (userAuth) => {
         if (userAuth) {
@@ -78,19 +103,30 @@ const App: React.FC = () => {
     return () => unsubscribe();
   }, []);
 
+  // --- DATA FETCHING ---
   useEffect(() => {
     if (!currentUser) return;
 
+    // 1. Listen to the pre-computed metrics document
+    const metricsDocRef = doc(db, 'metrics', 'dashboard');
+    const unsubMetrics = onSnapshot(metricsDocRef, (docSnap) => {
+        if (docSnap.exists()) {
+            const data = convertTimestampsInObject(docSnap.data());
+            setDashboardData(data);
+        } else {
+            // Document might not exist on first load, can set a default state
+            setDashboardData(null);
+        }
+        setDashboardLoading(false);
+    });
+
+    // 2. Setup listeners on raw data collections for the modals
     const unsubUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
-      const userList = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as User));
-      setUsers(userList);
+      setUsers(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as User)));
     });
-
     const unsubDealerships = onSnapshot(collection(db, 'dealerships'), (snapshot) => {
-      const dealershipList = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Dealership));
-      setAllDealerships(dealershipList);
+      setAllDealerships(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Dealership)));
     });
-
     const unsubVehicles = onSnapshot(collection(db, 'vehicles'), (snapshot) => {
       const vehicleList = snapshot.docs.map(doc => {
         const data = doc.data();
@@ -102,108 +138,39 @@ const App: React.FC = () => {
       });
       setAllVehicles(vehicleList);
     });
-    
-    const unsubSales = onSnapshot(collection(db, 'sales'), (snapshot) => {
-      const salesList = snapshot.docs.map(doc => {
-        const data = doc.data();
-        return { 
-            ...data, 
-            id: doc.id,
-            timestamp: data.timestamp.toDate() 
-        } as Sale;
-      }).sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
-      setAllSales(salesList);
+    const unsubGoals = onSnapshot(collection(db, 'goals'), (snapshot) => {
+      setAllGoals(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Goal)));
     });
 
-    const unsubGoals = onSnapshot(collection(db, 'goals'), (snapshot) => {
-      const goalsList = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Goal));
-      setAllGoals(goalsList);
+    const unsubTransfers = onSnapshot(collection(db, 'transfer_requests'), (snapshot) => {
+        const transfers = snapshot.docs.map(doc => {
+            const data = doc.data();
+            return {
+                ...convertTimestampsInObject(data),
+                id: doc.id,
+            } as TransferRequest;
+        });
+        setAllTransferRequests(transfers);
     });
-    
+
     return () => {
+      unsubMetrics();
       unsubUsers();
       unsubDealerships();
       unsubVehicles();
-      unsubSales();
       unsubGoals();
+      unsubTransfers();
     };
   }, [currentUser]);
 
-  // Derived and Enriched Data
-  const enrichedSales = useMemo((): EnrichedSale[] => {
-    return allSales.map(sale => {
-      const vehicle = allVehicles.find(v => v.vin === sale.vehicleId);
-      const salesperson = users.find(u => u.id === sale.salespersonId);
-      const dealership = allDealerships.find(d => d.id === sale.dealershipId);
-      return {
-        ...sale,
-        vehicle: vehicle!,
-        salesperson: salesperson!,
-        dealership: dealership!
-      }
-    }).filter(s => s.vehicle && s.salesperson && s.dealership);
-  }, [allSales, allVehicles, users, allDealerships]);
-
-  const allRegionalSales = useMemo((): RegionalSale[] => {
-    const salesByRegion = enrichedSales.reduce((acc, sale) => {
-      const province = sale.dealership.province;
-      acc[province] = (acc[province] || 0) + 1;
-      return acc;
-    }, {} as Record<string, number>);
-
-    return allDealerships.map(d => d.province).filter((v, i, a) => a.indexOf(v) === i)
-      .map(province => ({
-        name: province,
-        ventas: salesByRegion[province] || 0
-      }));
-  }, [enrichedSales, allDealerships]);
-
-  const financialKpis = useMemo(() => {
-    const totalRevenue = enrichedSales.reduce((sum, sale) => sum + sale.salePrice + sale.financingIncome + sale.insuranceIncome, 0);
-    const totalProfit = enrichedSales.reduce((sum, sale) => sum + sale.profit, 0);
-    const totalCommissions = enrichedSales.reduce((sum, sale) => sum + sale.commission, 0);
-    const averageMargin = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
-
-    return { totalRevenue, totalProfit, totalCommissions, averageMargin };
-  }, [enrichedSales]);
-
-  const { topSalespeople, topDealerships } = useMemo(() => {
-    const currentMonth = new Date().toISOString().slice(0, 7);
-    const isFactoryUser = currentUser?.role === 'Factory';
-
-    const getPerformanceData = (entities: (User | Dealership)[], entityType: 'user' | 'dealership') => {
-        return entities.map(entity => {
-            const monthlySales = enrichedSales.filter(s => {
-                const entityId = entityType === 'user' ? s.salesperson.id : s.dealership.id;
-                return entityId === entity.id && s.timestamp.toISOString().slice(0, 7) === currentMonth;
-            });
-
-            const totalProfit = monthlySales.reduce((acc, s) => acc + s.profit, 0);
-            const salesCount = monthlySales.length;
-
-            const profitGoal = allGoals.find(g => g.entityId === entity.id && g.month === currentMonth && g.type === 'profit');
-            const salesCountGoal = allGoals.find(g => g.entityId === entity.id && g.month === currentMonth && g.type === 'salesCount');
-
-            return {
-                ...entity,
-                value: totalProfit, // Primary value is profit
-                salesCount: salesCount,
-                dealership: (entity as User).role === 'Salesperson' ? allDealerships.find(d => d.id === (entity as User).dealershipId)?.name || '' : '',
-                location: (entity as Dealership).city || '',
-                profitGoal: profitGoal?.target,
-                salesCountGoal: salesCountGoal?.target,
-            };
-        }).sort((a, b) => b.value - a.value);
-    };
-
-    const salespeople = users.filter(u => u.role === 'Salesperson');
-    const targetSalespeople = isFactoryUser ? salespeople : salespeople.filter(sp => sp.dealershipId === currentUser?.dealershipId);
-
-    const topSalespeople = getPerformanceData(targetSalespeople, 'user').slice(0, 5);
-    const topDealerships = isFactoryUser ? getPerformanceData(allDealerships, 'dealership').slice(0, 5) : [];
-
-    return { topSalespeople, topDealerships };
-  }, [enrichedSales, users, allDealerships, currentUser, allGoals]);
+  // Client-side filtering for user-specific views (lightweight operation)
+  const filteredTopSalespeople = useMemo(() => {
+    if (!dashboardData || !currentUser) return [];
+    if (currentUser.role === 'Factory') {
+        return dashboardData.topSalespeople;
+    }
+    return dashboardData.topSalespeople.filter((sp: User) => sp.dealershipId === currentUser.dealershipId);
+  }, [dashboardData, currentUser]);
 
 
   // --- AUTHENTICATION HANDLERS ---
@@ -250,8 +217,6 @@ const App: React.FC = () => {
   const handleDeleteUser = async (userId: string) => {
       if (window.confirm('¿Está seguro que desea eliminar este usuario? Esta acción es irreversible.')) {
           try {
-              // Deleting Auth users requires a backend function for security.
-              // This will only delete the Firestore record.
               await deleteDoc(doc(db, "users", userId));
               alert('Usuario eliminado de la base de datos de la aplicación.');
           } catch(error) {
@@ -264,7 +229,6 @@ const App: React.FC = () => {
 
   // --- ENTITY MANAGEMENT HANDLERS (FIRESTORE) ---
   const handleAddDealership = async (dealershipData: Omit<Dealership, 'id' | 'coords'>) => {
-    // TODO: Use a geocoding service to get real coords from city/province
     const newCoords = { x: Math.random() * 1000, y: Math.random() * 600 };
     const newDocRef = doc(collection(db, 'dealerships'));
     await setDoc(newDocRef, { ...dealershipData, id: newDocRef.id, coords: newCoords });
@@ -360,65 +324,82 @@ const App: React.FC = () => {
       setVehicleToSell(null);
   };
     
-  // --- REPORT HANDLER ---
-  const handleGenerateReport = (options: ReportOptions) => {
-      const { dealershipIds, startDate, endDate, detailed } = options;
-      const selectedDealershipIds = new Set(dealershipIds);
-      const start = startDate ? new Date(startDate) : new Date('1970-01-01');
-      const end = endDate ? new Date(endDate) : new Date();
-      end.setHours(23, 59, 59, 999); 
+  const handleInitiateTransfer = async (vehicle: Vehicle) => {
+    if (!currentUser || !vehicle.dealershipId) {
+        alert("Error: No se pudo procesar la solicitud. Intente de nuevo.");
+        return;
+    }
 
-      const filteredSales = enrichedSales.filter(sale => 
-          (selectedDealershipIds.size === 0 || selectedDealershipIds.has(sale.dealership.id)) &&
-          (sale.timestamp >= start && sale.timestamp <= end)
-      );
+    if (window.confirm(`¿Está seguro que desea solicitar la transferencia del ${vehicle.model} (VIN: ${vehicle.vin})?`)) {
+        try {
+            const newTransferRequest: Omit<TransferRequest, 'id'> = {
+                vehicleId: vehicle.vin,
+                fromDealershipId: vehicle.dealershipId,
+                toDealershipId: currentUser.dealershipId!,
+                requestingUserId: currentUser.id,
+                status: 'pending',
+                createdAt: new Date(),
+                updatedAt: new Date(),
+            };
+            await addDoc(collection(db, "transfer_requests"), newTransferRequest);
+            alert("Solicitud de transferencia enviada exitosamente.");
+        } catch (error) {
+            console.error("Error creating transfer request:", error);
+            alert("Ocurrió un error al enviar la solicitud.");
+        }
+    }
+  };
 
-      const relevantDealerships = dealershipIds.length > 0
-          ? allDealerships.filter(d => dealershipIds.includes(d.id))
-          : allDealerships;
-
-      let headers: string[], rows: string[][];
-
-      if (detailed) {
-          headers = ['VIN', 'Modelo', 'Color', 'Año', 'Estado Actual', 'Concesionario', 'Fecha Venta', 'Precio Venta', 'Vendedor', 'Nombre Cliente', 'Apellido Cliente', 'Email Cliente', 'Teléfono Cliente', 'Dirección Cliente'];
-          const relevantVehicles = allVehicles.filter(v => selectedDealershipIds.size === 0 || (v.dealershipId && selectedDealershipIds.has(v.dealershipId)));
-          rows = relevantVehicles.map(v => {
-              const sale = enrichedSales.find(s => s.vehicle.vin === v.vin);
-              const dealershipName = v.dealershipId ? allDealerships.find(d => d.id === v.dealershipId)?.name || '' : 'Fábrica';
-              const isSoldInPeriod = sale && filteredSales.some(fs => fs.id === sale.id);
-              return [ v.vin, v.model, v.color, v.year.toString(), v.status, dealershipName, isSoldInPeriod && sale ? sale.timestamp.toLocaleDateString('es-AR') : '', isSoldInPeriod && sale ? sale.salePrice.toString() : '', isSoldInPeriod && sale ? sale.salesperson.name : '', sale?.customerFirstName || '', sale?.customerLastName || '', sale?.customerEmail || '', sale?.customerPhone || '', sale?.customerAddress || '' ];
-          });
-      } else {
-          headers = ['Concesionario', 'Modelo', 'Stock Actual', 'Ventas en Periodo'];
-          const summary: { [key: string]: { stock: number; sales: number } } = {};
-          relevantDealerships.forEach(d => {
-              const dealershipModels = [...new Set(allVehicles.filter(v => v.dealershipId === d.id).map(v => v.model))];
-              dealershipModels.forEach(model => {
-                  const stock = allVehicles.filter(v => v.dealershipId === d.id && v.model === model && v.status === 'In-Stock').length;
-                  const salesInPeriod = filteredSales.filter(s => s.dealership.id === d.id && s.vehicle.model === model).length;
-                  if (stock > 0 || salesInPeriod > 0) {
-                      summary[`${d.name}|${model}`] = { stock, sales: salesInPeriod };
-                  }
-              });
-          });
-          rows = Object.entries(summary).map(([key, value]) => {
-              const [dealershipName, model] = key.split('|');
-              return [dealershipName, model, value.stock.toString(), value.sales.toString()];
-          });
+  const handleApproveTransfer = async (transferId: string) => {
+      if (!window.confirm("¿Está seguro que desea APROBAR esta transferencia?")) return;
+      try {
+          const functions = getFunctions();
+          const updateTransfer = httpsCallable(functions, 'updateTransferStatus');
+          await updateTransfer({ transferId, status: 'approved' });
+          alert('Transferencia aprobada exitosamente. El vehículo ahora está en tránsito.');
+      } catch (error: any) {
+          console.error("Error approving transfer:", error);
+          alert(`Error al aprobar la transferencia: ${error.message}`);
       }
-      
-      const BOM = '\uFEFF', separator = ';';
-      const escapeCell = (cell: string) => `"${String(cell ?? '').replace(/"/g, '""')}"`;
-      let csvString = headers.join(separator) + '\n';
-      rows.forEach(row => { csvString += row.map(escapeCell).join(separator) + '\n'; });
+  };
 
-      const blob = new Blob([BOM + csvString], { type: 'text/csv;charset=utf-8;' });
-      const link = document.createElement("a");
-      link.href = URL.createObjectURL(blob);
-      link.download = `reporte_pgc_${detailed ? 'detallado' : 'resumido'}_${new Date().toISOString().split('T')[0]}.csv`;
-      link.click();
-      URL.revokeObjectURL(link.href);
-      setIsReportModalOpen(false);
+  const handleRejectTransfer = async (transferId: string) => {
+      const reason = prompt("Por favor, ingrese un breve motivo para el rechazo:");
+      if (reason) {
+          try {
+              const functions = getFunctions();
+              const updateTransfer = httpsCallable(functions, 'updateTransferStatus');
+              await updateTransfer({ transferId, status: 'rejected', rejectionReason: reason });
+              alert('Transferencia rechazada.');
+          } catch (error: any) {
+              console.error("Error rejecting transfer:", error);
+              alert(`Error al rechazar la transferencia: ${error.message}`);
+          }
+      }
+  };
+
+  // --- REPORT HANDLER ---
+  const handleGenerateReport = async (options: ReportOptions) => {
+      setIsReportGenerating(true);
+      try {
+          const functions = getFunctions();
+          const generateReportFunc = httpsCallable(functions, 'generateReport');
+          const result = await generateReportFunc(options) as { data: { csvString: string } };
+
+          const BOM = '\uFEFF';
+          const blob = new Blob([BOM + result.data.csvString], { type: 'text/csv;charset=utf-8;' });
+          const link = document.createElement("a");
+          link.href = URL.createObjectURL(blob);
+          link.download = `reporte_pgc_${options.detailed ? 'detallado' : 'resumido'}_${new Date().toISOString().split('T')[0]}.csv`;
+          link.click();
+          URL.revokeObjectURL(link.href);
+      } catch (error) {
+          console.error("Error generating report:", error);
+          alert("Ocurrió un error al generar el reporte. Por favor, intente de nuevo.");
+      } finally {
+          setIsReportGenerating(false);
+          setIsReportModalOpen(false);
+      }
   };
 
 
@@ -429,6 +410,23 @@ const App: React.FC = () => {
 
   if (!currentUser) {
     return <Login onLogin={handleLogin} />;
+  }
+
+  if (dashboardLoading || !dashboardData) {
+      return (
+        <div className="flex flex-col justify-center items-center h-screen bg-gray-900">
+           <Header
+              currentUser={currentUser}
+              onLogout={handleLogout}
+              onOpenManagementModal={() => {}}
+              onOpenReportModal={() => {}}
+              onOpenSalespersonModal={() => {}}
+            />
+          <div className="flex-grow flex items-center">
+            <div className="text-xl text-gray-100">Estableciendo conexión en tiempo real...</div>
+          </div>
+        </div>
+      );
   }
 
   return (
@@ -443,16 +441,20 @@ const App: React.FC = () => {
       <main className="p-4 sm:p-6 lg:p-8">
         <Dashboard 
           currentUser={currentUser}
-          sales={enrichedSales}
+          sales={dashboardData.enrichedSales}
           vehicles={allVehicles}
           dealerships={allDealerships}
           users={users}
-          regionalSales={allRegionalSales}
-          financialKpis={financialKpis}
-          topSalespeople={topSalespeople}
-          topDealerships={topDealerships}
+          regionalSales={dashboardData.allRegionalSales}
+          financialKpis={dashboardData.financialKpis}
+          topSalespeople={filteredTopSalespeople}
+          topDealerships={dashboardData.topDealerships}
+          transferRequests={allTransferRequests}
           onInitiateSale={setVehicleToSell}
           onAcceptDelivery={handleAcceptVehicleDelivery}
+          onInitiateTransfer={handleInitiateTransfer}
+          onApproveTransfer={handleApproveTransfer}
+          onRejectTransfer={handleRejectTransfer}
         />
       </main>
       
@@ -480,6 +482,7 @@ const App: React.FC = () => {
             onClose={() => setIsReportModalOpen(false)}
             dealerships={allDealerships}
             onGenerateReport={handleGenerateReport}
+            isGenerating={isReportGenerating}
         />
       )}
       
