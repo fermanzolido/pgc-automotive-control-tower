@@ -9,18 +9,33 @@ import {
   EnrichedSale,
   RegionalSale,
   TransferRequest,
+  DemandForecast,
 } from "./types";
 
 admin.initializeApp();
 const db = admin.firestore();
 
-/**
- * The core logic for calculating all dashboard metrics.
- * Fetches all data and computes aggregations from a global perspective.
- * @return {Promise<object>} A promise that resolves to the full metrics object.
- */
+// Converts Firestore Timestamps to JS Date objects in nested data
+const convertTimestamps = (data: any): any => {
+    if (data === null || typeof data !== 'object') {
+        return data;
+    }
+    if (data instanceof admin.firestore.Timestamp) {
+        return data.toDate();
+    }
+    if (Array.isArray(data)) {
+        return data.map(convertTimestamps);
+    }
+    const res: {[key: string]: any} = {};
+    for (const key in data) {
+        if (Object.prototype.hasOwnProperty.call(data, key)) {
+            res[key] = convertTimestamps(data[key]);
+        }
+    }
+    return res;
+};
+
 async function calculateAllMetrics(): Promise<object> {
-  // --- DATA FETCHING ---
   const [
     salesSnapshot,
     vehiclesSnapshot,
@@ -51,7 +66,6 @@ async function calculateAllMetrics(): Promise<object> {
       (doc) => ({id: doc.id, ...doc.data()}) as Goal,
   );
 
-  // --- DATA PROCESSING & ENRICHMENT ---
   const enrichedSales: EnrichedSale[] = allSales.map((sale) => {
     const vehicle = allVehicles.find((v) => v.vin === sale.vehicleId);
     const salesperson = allUsers.find((u) => u.id === sale.salespersonId);
@@ -66,9 +80,6 @@ async function calculateAllMetrics(): Promise<object> {
     };
   }).filter((s) => s.vehicle && s.salesperson && s.dealership);
 
-  // --- CALCULATIONS ---
-
-  // 1. Financial KPIs
   const totalRevenue = enrichedSales.reduce(
       (sum, sale) =>
           sum + sale.salePrice + sale.financingIncome + sale.insuranceIncome, 0,
@@ -85,7 +96,6 @@ async function calculateAllMetrics(): Promise<object> {
     totalRevenue, totalProfit, totalCommissions, averageMargin,
   };
 
-  // 2. Regional Sales
   const salesByRegion = enrichedSales.reduce((acc, sale) => {
     const province = sale.dealership.province;
     acc[province] = (acc[province] || 0) + 1;
@@ -100,7 +110,6 @@ async function calculateAllMetrics(): Promise<object> {
         ventas: salesByRegion[province] || 0,
       }));
 
-  // 3. Top Performers (Global)
   const currentMonth = new Date().toISOString().slice(0, 7);
 
   const getPerformanceData = (
@@ -146,47 +155,20 @@ async function calculateAllMetrics(): Promise<object> {
   const topDealerships = getPerformanceData(allDealerships, "dealership")
       .slice(0, 5);
 
-  // --- RETURN ---
   return {
     enrichedSales,
     allRegionalSales,
     financialKpis,
     topSalespeople,
     topDealerships,
-    // Include raw data for client-side filtering if needed
     allVehicles,
     allDealerships,
     allUsers,
     allGoals,
-    // Add a timestamp for when the metrics were last updated
     lastUpdated: admin.firestore.FieldValue.serverTimestamp(),
   };
 }
 
-// Converts Firestore Timestamps to JS Date objects in nested data
-const convertTimestamps = (data: any): any => {
-    if (data === null || typeof data !== 'object') {
-        return data;
-    }
-    if (data instanceof admin.firestore.Timestamp) {
-        return data.toDate();
-    }
-    if (Array.isArray(data)) {
-        return data.map(convertTimestamps);
-    }
-    const res: {[key: string]: any} = {};
-    for (const key in data) {
-        if (Object.prototype.hasOwnProperty.call(data, key)) {
-            res[key] = convertTimestamps(data[key]);
-        }
-    }
-    return res;
-};
-
-/**
- * On-demand function for clients to get the latest metrics.
- * This can be used for the initial load.
- */
 export const getDashboardMetrics = functions.https.onCall(
     async (data, context) => {
       if (!context.auth) {
@@ -194,16 +176,10 @@ export const getDashboardMetrics = functions.https.onCall(
             "unauthenticated", "The function must be called while authenticated.",
         );
       }
-      // For on-demand, we can either read the pre-computed doc or re-calculate.
-      // Re-calculating ensures the user gets the absolute latest data.
       return await calculateAllMetrics();
     },
 );
 
-/**
- * Firestore trigger to update the pre-computed metrics document when
- * any relevant data changes.
- */
 const updateMetricsDocument = async () => {
     try {
         const metrics = await calculateAllMetrics();
@@ -214,21 +190,11 @@ const updateMetricsDocument = async () => {
     }
 };
 
-// Create triggers for all relevant collections
-export const onSaleChange = functions.firestore
-    .document("sales/{saleId}").onWrite(updateMetricsDocument);
-
-export const onVehicleChange = functions.firestore
-    .document("vehicles/{vehicleId}").onWrite(updateMetricsDocument);
-
-export const onUserChange = functions.firestore
-    .document("users/{userId}").onWrite(updateMetricsDocument);
-
-export const onDealershipChange = functions.firestore
-    .document("dealerships/{dealershipId}").onWrite(updateMetricsDocument);
-
-export const onGoalChange = functions.firestore
-    .document("goals/{goalId}").onWrite(updateMetricsDocument);
+export const onSaleChange = functions.firestore.document("sales/{saleId}").onWrite(updateMetricsDocument);
+export const onVehicleChange = functions.firestore.document("vehicles/{vehicleId}").onWrite(updateMetricsDocument);
+export const onUserChange = functions.firestore.document("users/{userId}").onWrite(updateMetricsDocument);
+export const onDealershipChange = functions.firestore.document("dealerships/{dealershipId}").onWrite(updateMetricsDocument);
+export const onGoalChange = functions.firestore.document("goals/{goalId}").onWrite(updateMetricsDocument);
 
 export const generateReport = functions.https.onCall(async (data, context) => {
   if (!context.auth) {
@@ -243,7 +209,6 @@ export const generateReport = functions.https.onCall(async (data, context) => {
   const end = endDate ? new Date(endDate) : new Date();
   end.setHours(23, 59, 59, 999);
 
-  // --- DATA FETCHING ---
   const [
     salesSnapshot,
     vehiclesSnapshot,
@@ -269,7 +234,6 @@ export const generateReport = functions.https.onCall(async (data, context) => {
       (doc) => ({id: doc.id, ...doc.data()}) as Dealership,
   );
 
-  // --- DATA PROCESSING ---
   const enrichedSales: EnrichedSale[] = allSales.map((sale) => {
     const vehicle = allVehicles.find((v) => v.vin === sale.vehicleId);
     const salesperson = allUsers.find((u) => u.id === sale.salespersonId);
@@ -396,7 +360,7 @@ export const updateTransferStatus = functions.https.onCall(async (data, context)
                 approvedByUserId: uid,
             });
             const arrivalDate = new Date();
-            arrivalDate.setDate(arrivalDate.getDate() + 7); // Set arrival 7 days from now
+            arrivalDate.setDate(arrivalDate.getDate() + 7);
 
             transaction.update(vehicleRef, {
                 status: "Transferring",
@@ -462,7 +426,7 @@ export const calculateDemandForecast = functions.pubsub.schedule("every sunday 0
     for (const key in salesByModelProvince) {
         const [model, province] = key.split("|");
         const totalSales = salesByModelProvince[key];
-        const forecastedSales = Math.ceil(totalSales / 3); // Average monthly sales
+        const forecastedSales = Math.ceil(totalSales / 3);
 
         const forecastId = `${model.toLowerCase().replace(" ", "_")}-${province.toLowerCase().replace(" ", "_")}`;
         const forecastRef = db.collection("demand_forecasts").doc(forecastId);
