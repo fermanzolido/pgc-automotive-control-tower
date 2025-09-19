@@ -7,6 +7,9 @@ interface Performer {
     salesCount: number;
     profitGoal?: number;
     salesCountGoal?: number;
+    city?: string; // Add optional city
+    province?: string; // Add optional province
+    coords?: { x: number; y: number }; // Add optional coords
     [key: string]: any;
 }
 

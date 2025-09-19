@@ -1,5 +1,7 @@
 import * as functions from "firebase-functions";
 import * as admin from "firebase-admin";
+import { onDocumentWritten } from "firebase-functions/v2/firestore";
+import { onCall, HttpsError } from "firebase-functions/v2/https";
 import {
   Sale,
   Vehicle,
@@ -187,18 +189,16 @@ const convertTimestamps = (data: any): any => {
  * On-demand function for clients to get the latest metrics.
  * This can be used for the initial load.
  */
-export const getDashboardMetrics = functions.https.onCall(
-    async (data, context) => {
-      if (!context.auth) {
-        throw new functions.https.HttpsError(
-            "unauthenticated", "The function must be called while authenticated.",
-        );
-      }
-      // For on-demand, we can either read the pre-computed doc or re-calculate.
-      // Re-calculating ensures the user gets the absolute latest data.
-      return await calculateAllMetrics();
-    },
-);
+export const getDashboardMetrics = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError(
+        "unauthenticated", "The function must be called while authenticated.",
+    );
+  }
+  // For on-demand, we can either read the pre-computed doc or re-calculate.
+  // Re-calculating ensures the user gets the absolute latest data.
+  return await calculateAllMetrics();
+});
 
 /**
  * Firestore trigger to update the pre-computed metrics document when
@@ -215,29 +215,34 @@ const updateMetricsDocument = async () => {
 };
 
 // Create triggers for all relevant collections
-export const onSaleChange = functions.firestore
-    .document("sales/{saleId}").onWrite(updateMetricsDocument);
+export const onSaleChange = onDocumentWritten("sales/{saleId}", (event) => {
+    return updateMetricsDocument();
+});
 
-export const onVehicleChange = functions.firestore
-    .document("vehicles/{vehicleId}").onWrite(updateMetricsDocument);
+export const onVehicleChange = onDocumentWritten("vehicles/{vehicleId}", (event) => {
+    return updateMetricsDocument();
+});
 
-export const onUserChange = functions.firestore
-    .document("users/{userId}").onWrite(updateMetricsDocument);
+export const onUserChange = onDocumentWritten("users/{userId}", (event) => {
+    return updateMetricsDocument();
+});
 
-export const onDealershipChange = functions.firestore
-    .document("dealerships/{dealershipId}").onWrite(updateMetricsDocument);
+export const onDealershipChange = onDocumentWritten("dealerships/{dealershipId}", (event) => {
+    return updateMetricsDocument();
+});
 
-export const onGoalChange = functions.firestore
-    .document("goals/{goalId}").onWrite(updateMetricsDocument);
+export const onGoalChange = onDocumentWritten("goals/{goalId}", (event) => {
+    return updateMetricsDocument();
+});
 
-export const generateReport = functions.https.onCall(async (data, context) => {
-  if (!context.auth) {
-    throw new functions.https.HttpsError(
+export const generateReport = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError(
         "unauthenticated", "The function must be called while authenticated.",
     );
   }
 
-  const {dealershipIds, startDate, endDate, detailed} = data;
+  const {dealershipIds, startDate, endDate, detailed} = request.data;
   const selectedDealershipIds = new Set(dealershipIds);
   const start = startDate ? new Date(startDate) : new Date("1970-01-01");
   const end = endDate ? new Date(endDate) : new Date();
@@ -336,7 +341,7 @@ export const generateReport = functions.https.onCall(async (data, context) => {
     });
   }
 
-  const BOM = "\uFEFF";
+  
   const separator = ";";
   const escapeCell = (cell: string) => `"${String(cell ?? "")
       .replace(/"/g, '""')}"`;
@@ -348,21 +353,21 @@ export const generateReport = functions.https.onCall(async (data, context) => {
   return {csvString};
 });
 
-export const updateTransferStatus = functions.https.onCall(async (data, context) => {
-    if (!context.auth) {
-        throw new functions.https.HttpsError(
+export const updateTransferStatus = onCall(async (request) => {
+    if (!request.auth) {
+        throw new HttpsError(
             "unauthenticated", "The function must be called while authenticated.",
         );
     }
 
-    const { transferId, status, rejectionReason } = data;
+    const { transferId, status, rejectionReason } = request.data;
     if (!transferId || !status || (status === "rejected" && !rejectionReason)) {
-        throw new functions.https.HttpsError(
+        throw new HttpsError(
             "invalid-argument", "Missing required parameters.",
         );
     }
 
-    const uid = context.auth.uid;
+    const uid = request.auth.uid;
     const transferRef = db.collection("transfer_requests").doc(transferId);
 
     return db.runTransaction(async (transaction) => {
@@ -413,4 +418,14 @@ export const updateTransferStatus = functions.https.onCall(async (data, context)
 
         return { success: true, newStatus: status };
     });
+});
+
+import cors from 'cors';
+const corsHandler = cors({ origin: true });
+
+export const triggerMetricsUpdate = functions.https.onRequest((request, response) => {
+  corsHandler(request, response, async () => {
+    await updateMetricsDocument();
+    response.status(200).send({ success: true });
+  });
 });

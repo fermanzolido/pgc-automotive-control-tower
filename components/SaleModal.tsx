@@ -18,6 +18,8 @@ const SaleModal: React.FC<SaleModalProps> = ({ vehicle, onClose, onCreateSale })
     const [customerPhone, setCustomerPhone] = useState('');
     const [customerAddress, setCustomerAddress] = useState('');
     const [salePrice, setSalePrice] = useState('');
+    const [financingIncome, setFinancingIncome] = useState(''); // Add this line
+    const [insuranceIncome, setInsuranceIncome] = useState(''); // Add this line
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
@@ -33,6 +35,8 @@ const SaleModal: React.FC<SaleModalProps> = ({ vehicle, onClose, onCreateSale })
             customerPhone,
             customerAddress,
             salePrice: parseFloat(salePrice),
+            financingIncome: parseFloat(financingIncome || '0'), // Add this line
+            insuranceIncome: parseFloat(insuranceIncome || '0'), // Add this line
         });
     };
 

@@ -10,7 +10,7 @@ import type { User, Sale, Vehicle, Dealership, EnrichedSale, ReportOptions, Goal
 import { getSeedData } from './services/mockData';
 import { auth, db } from './services/firebase';
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut, createUserWithEmailAndPassword } from 'firebase/auth';
-import { collection, getDocs, doc, getDoc, setDoc, deleteDoc, onSnapshot, writeBatch, updateDoc } from 'firebase/firestore';
+import { collection, getDocs, doc, getDoc, setDoc, deleteDoc, onSnapshot, writeBatch, updateDoc, addDoc } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 
 // Helper to convert Firestore Timestamps from Cloud Function result
@@ -77,6 +77,16 @@ const App: React.FC = () => {
 
             await batch.commit();
             console.log("Database seeded successfully.");
+        } else {
+            console.log("Database already contains sales. Skipping seeding.");
+        }
+
+        // Always trigger the metrics update to ensure dashboard data is present
+        try {
+            await fetch('https://us-central1-autitos-82ad2.cloudfunctions.net/triggerMetricsUpdate', { method: 'POST' });
+            console.log("Initial metrics update triggered.");
+        } catch (error) {
+            console.error("Error triggering initial metrics update:", error);
         }
     };
     seedDatabase();

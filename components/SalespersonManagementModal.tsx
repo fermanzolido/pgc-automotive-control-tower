@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
-import type { User } from '../types';
+import type { User, Goal } from '../types';
 import { XIcon } from './icons/DashboardIcons';
 
 interface SalespersonManagementModalProps {
@@ -8,16 +8,26 @@ interface SalespersonManagementModalProps {
     onClose: () => void;
     users: User[];
     currentUser: User;
+    goals: Goal[]; // Add goals
     onCreateUser: (user: Omit<User, 'id'>) => void;
     onDeleteUser: (userId: string) => void;
+    onSetGoal: (goal: Omit<Goal, 'id'>) => void; // Add onSetGoal
 }
 
+type ActiveTab = 'create' | 'goals'; // Define the type for activeTab
 const SalespersonManagementModal: React.FC<SalespersonManagementModalProps> = ({
-    isOpen, onClose, users, currentUser, onCreateUser, onDeleteUser
+    isOpen, onClose, users, currentUser, onCreateUser, onDeleteUser, goals, onSetGoal
 }) => {
+    const [activeTab, setActiveTab] = useState<ActiveTab>('create'); // Declare activeTab
     const [newUsername, setNewUsername] = useState('');
     const [newPassword, setNewPassword] = useState('');
     const [newName, setNewName] = useState('');
+
+    // Declare states for goal management
+    const [selectedSalesperson, setSelectedSalesperson] = useState('');
+    const [goalMonth, setGoalMonth] = useState('');
+    const [goalType, setGoalType] = useState<'salesCount' | 'profit'>('salesCount'); // Default to salesCount
+    const [goalTarget, setGoalTarget] = useState('');
 
     const salespeople = useMemo(() => 
         users.filter(u => u.role === 'Salesperson' && u.dealershipId === currentUser.dealershipId),

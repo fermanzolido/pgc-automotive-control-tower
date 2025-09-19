@@ -76,16 +76,16 @@ const Dashboard: React.FC<DashboardProps> = ({
 
     const dealershipArrivedVehicles = useMemo(() => {
         if (!isDealershipUser) return [];
-        return displayedVehicles.filter(v => v.status === 'Arrived');
+        return displayedVehicles.filter(v => v.status === 'In-Transit');
     }, [displayedVehicles, isDealershipUser]);
 
     const kpis = useMemo(() => {
         const totalSales = displayedSales.reduce((sum, sale) => sum + sale.salePrice, 0);
         const totalVehiclesSold = displayedSales.length;
-        const modelCounts = displayedSales.reduce((acc, sale) => {
-            acc[sale.vehicle.model] = (acc[sale.vehicle.model] || 0) + 1;
-            return acc;
-        }, {} as Record<string, number>);
+        const modelCounts: Record<string, number> = {};
+        displayedSales.forEach(sale => {
+            modelCounts[sale.vehicle.model] = (modelCounts[sale.vehicle.model] ?? 0) + 1;
+        });
         const topSellingModel = Object.entries(modelCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || 'N/A';
         const inStockCount = displayedVehicles.filter(v => v.status === 'In-Stock').length;
 
@@ -195,7 +195,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                                                 <tr key={v.vin} className="border-b border-gray-700 hover:bg-gray-700/50">
                                                     <td className="px-4 py-3 font-medium">{v.model} <span className="text-gray-400">({v.color})</span></td>
                                                     <td className="px-4 py-3 font-mono text-xs text-gray-400">{v.vin}</td>
-                                                    <td className="px-4 py-3 hidden sm:table-cell text-gray-400">{v.history.find(h => h.status === 'Arrived')?.date.toLocaleDateString('es-AR')}</td>
+                                                    <td className="px-4 py-3 hidden sm:table-cell">{v.history.find(h => h.status === 'Arrived')?.date.toLocaleDateString('es-AR')}</td>
                                                     <td className="px-4 py-3 text-right">
                                                         <button
                                                             onClick={() => onAcceptDelivery(v.vin)}

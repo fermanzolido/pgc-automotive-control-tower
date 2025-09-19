@@ -1,7 +1,7 @@
 {
   "functions": {
     "source": "functions",
-    "runtime": "nodejs18"
+    "runtime": "nodejs22"
   },
   "hosting": {
     "public": "dist",
@@ -9,12 +9,6 @@
       "firebase.json",
       "**/.*",
       "**/node_modules/**"
-    ],
-    "rewrites": [
-      {
-        "source": "**",
-        "destination": "/index.html"
-      }
     ]
   }
 }

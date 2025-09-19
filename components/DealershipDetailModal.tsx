@@ -17,6 +17,7 @@ const statusStyles: Record<VehicleStatus, { text: string; bg: string; }> = {
   'Arrived': { text: 'text-purple-900', bg: 'bg-purple-300' },
   'Sold': { text: 'text-red-900', bg: 'bg-red-300' },
   'At-Factory': { text: 'text-blue-900', bg: 'bg-blue-300' },
+  'Transferring': { text: 'text-gray-900', bg: 'bg-gray-300' },
 };
 
 const historyStatusConfig: Record<VehicleStatus, { icon: React.ReactNode; text: string; color: string; }> = {
@@ -25,6 +26,7 @@ const historyStatusConfig: Record<VehicleStatus, { icon: React.ReactNode; text: 
     'Arrived': { icon: <CheckCircleIcon className="w-5 h-5" />, text: 'Recibido', color: 'text-purple-400' },
     'In-Stock': { icon: <WarehouseIcon className="w-5 h-5" />, text: 'En Stock', color: 'text-green-400' },
     'Sold': { icon: <CheckCircleIcon className="w-5 h-5" />, text: 'Vendido', color: 'text-red-400' },
+    'Transferring': { icon: <ArrowRightIcon className="w-5 h-5" />, text: 'En Transferencia', color: 'text-gray-400' },
 };
 
 const DealershipDetailModal: React.FC<DealershipDetailModalProps> = ({ dealership, sales, inventory, onClose, currentUser, onInitiateTransfer }) => {
